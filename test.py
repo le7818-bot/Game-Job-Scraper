@@ -61,11 +61,13 @@ if st.button("🚀 선택한 모든 회사 공고 분석 시작"):
         with st.status(f"📡 {company} 정보 수집 중...", expanded=True) as status:
             try:
                 chrome_options = Options()
-                chrome_options.add_argument("--headless=new")
-                chrome_options.add_argument("--window-size=1920,1080")
-                chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                
-                driver = webdriver.Chrome(options=chrome_options)
+            chrome_options.add_argument("--headless") # 화면 없이 실행
+            chrome_options.add_argument("--no-sandbox") # 보안 제한 해제 (서버 필수)
+            chrome_options.add_argument("--disable-dev-shm-usage") # 메모리 부족 방지
+            chrome_options.add_argument("--disable-gpu")
+            
+            # 서버용 브라우저 실행
+            driver = webdriver.Chrome(options=chrome_options)
                 config = SITE_CONFIG[company]
                 
                 driver.get(config["url"])
@@ -142,4 +144,5 @@ if st.button("🚀 선택한 모든 회사 공고 분석 시작"):
         with st.expander(f"🏆 [{job['score']}점] [{job['company']}] {job['title']}", expanded=False):
             st.write(job['analysis'])
     
+
     st.balloons()
