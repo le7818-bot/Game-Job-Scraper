@@ -1,23 +1,29 @@
 import streamlit as st
 import time
+import os
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 import google.generativeai as genai
 import google.api_core.exceptions
 
 # --- 1. AI 세팅 (비밀 금고에서 키 가져오기) ---
 try:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
+    if "GEMINI_API_KEY" in st.secrets:
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+    else:
+        API_KEY = "여기에_로컬용_키_입력" # 로컬 테스트 시에만 사용
+        
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-2.5-flash')
 except Exception as e:
-    st.error("Secrets 설정에서 API 키를 확인해주세요!")
+    st.error(f"API 세팅 중 오류: {e}")
 
 # --- 2. UI 구성 ---
 st.set_page_config(page_title="게임 기획 통합 채용 비서", layout="wide")
 st.title("💼 게임 기획자 맞춤형 통합 채용 보드")
-st.write("6년 차 시스템 기획자님을 위한 맞춤형 분석기입니다.")
+st.write("6년 차 시스템 기획자님을 위한 통합 분석기입니다.") #
 
 st.sidebar.header("🔍 검색 설정")
 target_companies = st.sidebar.multiselect(
@@ -61,9 +67,9 @@ if st.button("🚀 분석 시작"):
     for company in target_companies:
         with st.status(f"📡 {company} 정보 수집 중...", expanded=True) as status:
             try:
-                # --- [중요] Streamlit Cloud 서버 전용 크롬 설정 ---
+                # --- 서버 전용 크롬 설정 강화 ---
                 chrome_options = Options()
-                chrome_options.add_argument("--headless") 
+                chrome_options.add_argument("--headless")
                 chrome_options.add_argument("--no-sandbox")
                 chrome_options.add_argument("--disable-dev-shm-usage")
                 chrome_options.add_argument("--disable-gpu")
@@ -72,10 +78,11 @@ if st.button("🚀 분석 시작"):
                 config = SITE_CONFIG[company]
                 
                 driver.get(config["url"])
-                time.sleep(6)
+                time.sleep(8) # 페이지 로딩 시간을 더 넉넉히 줍니다.
 
                 job_elements = driver.find_elements(By.CSS_SELECTOR, config["list_selector"])
                 temp_jobs = []
+                
                 for elem in job_elements[:analyze_count]:
                     try:
                         title = elem.find_element(By.CSS_SELECTOR, config["title_selector"]).text
@@ -88,6 +95,7 @@ if st.button("🚀 분석 시작"):
                             temp_jobs.append({"title": title, "link": link})
                     except: continue
 
+                # 수집된 공고가 있다면 분석 시작
                 for job in temp_jobs:
                     try:
                         if company == "NCSoft":
@@ -95,17 +103,17 @@ if st.button("🚀 분석 시작"):
                         else:
                             driver.get(job['link'])
                         
-                        time.sleep(4)
+                        time.sleep(5)
                         jd_text = driver.find_element(By.TAG_NAME, "body").text
                         
-                        # AI 분석 및 자동 재시도
+                        # AI 분석 루프
                         while True:
                             try:
                                 prompt = f"6년 차 게임 시스템 기획자 관점에서 다음 공고 분석: {jd_text[:3000]}... (첫 줄에 추천 점수 0-100 기재)"
                                 response = model.generate_content(prompt)
                                 break
                             except google.api_core.exceptions.ResourceExhausted:
-                                st.warning("⚠️ 구글 AI 쿨타임 대기 중 (20초)...")
+                                st.warning("⚠️ 구글 AI 게이지 충전 중 (20초)...")
                                 time.sleep(20)
                         
                         try:
@@ -126,16 +134,18 @@ if st.button("🚀 분석 시작"):
                         continue
 
                 driver.quit()
-                status.update(label=f"✅ {company} 수집 완료!", state="complete")
+                status.update(label=f"✅ {company} 분석 완료! ({len(temp_jobs)}개 발견)", state="complete")
 
             except Exception as e:
                 st.error(f"{company} 오류: {e}")
 
-    # 통합 점수순 정렬
-    all_evaluated_jobs.sort(key=lambda x: x['score'], reverse=True)
-
-    st.divider()
-    for job in all_evaluated_jobs:
-        with st.expander(f"🏆 [{job['score']}점] [{job['company']}] {job['title']}", expanded=False):
-            st.write(job['analysis'])
-    st.balloons()
+    # 결과물 출력
+    if all_evaluated_jobs:
+        all_evaluated_jobs.sort(key=lambda x: x['score'], reverse=True)
+        st.divider()
+        for job in all_evaluated_jobs:
+            with st.expander(f"🏆 [{job['score']}점] [{job['company']}] {job['title']}", expanded=False):
+                st.write(job['analysis'])
+        st.balloons()
+    else:
+        st.warning("⚠️ 분석된 공고가 없습니다. 검색 조건을 바꾸거나 잠시 후 다시 시도해주세요.")
