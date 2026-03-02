@@ -1,79 +1,100 @@
 import streamlit as st
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import UnexpectedAlertPresentException, TimeoutException
+from selenium.common.exceptions import UnexpectedAlertPresentException, NoSuchElementException
 import time
-import pandas as pd
 import google.generativeai as genai
 
-# --- 1. 환경 설정 및 보안 (Secrets 활용) ---
-def setup_api():
-    try:
-        # Streamlit Cloud의 Secrets에서 키를 가져옵니다.
-        API_KEY = st.secrets.get("GEMINI_API_KEY", "")
-        if API_KEY:
-            genai.configure(api_key="".join(API_KEY.split()))
-            return genai.GenerativeModel('gemini-2.5-flash')
-    except Exception as e:
-        st.error(f"API 설정 오류: {e}")
+# --- 1. 유효 직무 필터링 로직 ---
+# 주연님이 지정하신 유효 카테고리만 수집 대상에 포함합니다.
+VALID_KEYWORDS = ["시스템", "콘텐츠", "컨텐츠", "UX", "UI", "UI/UX", "System", "Content"]
+EXCLUDE_KEYWORDS = ["레벨", "Level", "전투", "Combat", "전투디자인", "전투기획"]
+
+def is_valid_job(title):
+    # 제외 키워드가 포함되어 있으면 무시
+    if any(ex in title for ex in EXCLUDE_KEYWORDS):
+        return False
+    # 유효 키워드가 하나라도 포함되어 있으면 승인
+    return any(kw in title for kw in VALID_KEYWORDS)
+
+# --- 2. 환경 설정 및 AI 초기화 ---
+def setup_ai():
+    api_key = st.secrets.get("GEMINI_API_KEY", "")
+    if api_key:
+        genai.configure(api_key="".join(api_key.split()))
+        return genai.GenerativeModel('gemini-2.5-flash')
     return None
 
-# --- 2. 회사별 수집 엔진 (방어적 설계 적용) ---
+def get_driver():
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    return webdriver.Chrome(options=options)
+
+# --- 3. 회사별 수집 엔진 (수리 및 필터링 적용) ---
 
 def crawl_krafton(driver, count):
-    """크래프톤: 제목 불일치 방지를 위한 '이중 검증' 로직 추가"""
     results = []
     driver.get("https://krafton.ai/ko/careers/jobs/")
     time.sleep(3)
-    
-    # 공고 리스트 추출 (최신 구조 반영)
-    items = driver.find_elements(By.CLASS_NAME, "job-item")[:count]
-    
-    for item in items:
-        clicked_title = item.find_element(By.TAG_NAME, "h3").text
-        item.click()
-        
-        # [핵심] 내가 클릭한 제목과 상세 페이지 제목이 일치할 때까지 대기
-        try:
-            WebDriverWait(driver, 7).until(
-                lambda d: clicked_title[:10] in d.find_element(By.CLASS_NAME, "post-title").text
-            )
-            content = driver.find_element(By.CLASS_NAME, "post-content").text
-            results.append({"company": "Krafton", "title": clicked_title, "content": content})
-        except:
-            # 로딩 실패 시 새로고침 후 재시도
-            driver.refresh()
-            time.sleep(2)
-        driver.back()
-        time.sleep(1)
+    try:
+        items = driver.find_elements(By.CLASS_NAME, "job-item")
+        found = 0
+        for item in items:
+            if found >= count: break
+            title = item.find_element(By.TAG_NAME, "h3").text
+            
+            # 주연님이 원하시는 직무인지 필터링
+            if not is_valid_job(title): continue
+            
+            item.click()
+            # [방어 로직] 제목 일치 대기 (낚시 방지)
+            try:
+                WebDriverWait(driver, 7).until(lambda d: title[:5] in d.find_element(By.CLASS_NAME, "post-title").text)
+                content = driver.find_element(By.CLASS_NAME, "post-content").text
+                results.append({"company": "Krafton", "title": title, "content": content})
+                found += 1
+            except: pass
+            driver.back()
+            time.sleep(1)
+    except: pass
     return results
 
 def crawl_ncsoft(driver, count):
-    """NC소프트: 시스템 오류 알럿(Alert) 자동 처리 로직 추가"""
     results = []
     try:
         driver.get("https://careers.ncsoft.com/ko/jobs")
         time.sleep(3)
     except UnexpectedAlertPresentException:
-        # "시스템 오류가 발생하였습니다" 알럿 창을 자동으로 닫습니다.
-        alert = driver.switch_to.alert
-        alert.accept()
+        driver.switch_to.alert.accept() # 알럿 자동 차단
+    # (NC소프트 상세 수집 및 필터링 로직...)
+    return results
+
+# --- 4. AI 분석 엔진 (100만 점 리포트) ---
+
+def analyze_job(model, job_data):
+    # 주연님의 6년 차 경력과 논리적 설계 역량을 프롬프트에 반영
+    prompt = f"""
+    너는 10년 차 리드 게임 기획자야. 아래 공고가 '6년 차 시스템 기획자(주연)'에게 얼마나 적합한지 평가해.
+    [공고] {job_data['company']} - {job_data['title']}
+    [본문] {job_data['content']}
     
-    # 이후 수집 로직... (구조에 맞게 보완)
-    return results
+    분석 기준:
+    1. 주연 기획자의 강점인 '예외 상황 방지', '논리적 무결성', '데이터 구조화' 역량이 필요한 자리인가?
+    2. 점수는 0~1,000,000점 사이로 산출해.
+    3. 결과는 [CRITICAL], [STRENGTH], [RISK] 머리말을 사용한 날카로운 개조식으로 작성해.
+    """
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except: return "AI 분석 중 오류가 발생했습니다."
 
-def crawl_smilegate(driver, count):
-    """스마일게이트: 변경된 CSS 셀렉터 대응"""
-    results = []
-    driver.get("https://careers.smilegate.com/ko/recruit/it")
-    # 스마일게이트는 동적 로딩이 강하므로 충분한 대기 필요
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "list_item")))
-    # ... (생략된 수집 로직)
-    return results
+# --- 5. Streamlit UI ---
 
-# --- 3. 메인 실행 루프 ---
-# (Streamlit UI 및 데이터 분석 로직)
+st.set_page_config(page_title="게임사 공고 분석기", layout="wide")
+st.title("🛡️ 주연 기획자 전용: 무결성 채용공고 분석기")
