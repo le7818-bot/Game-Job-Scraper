@@ -30,11 +30,16 @@ def setup_ai():
 
 def get_driver():
     options = Options()
-    options.add_argument("--headless")
+    options.add_argument("--headless=new") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    return webdriver.Chrome(options=options)
+    
+    from selenium.webdriver.chrome.service import Service
+    from webdriver_manager.chrome import ChromeDriverManager
+    service = Service(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=options)
 
 # --- 3. 회사별 수집 엔진 ---
 
@@ -140,3 +145,4 @@ if st.button("🚀 유효 공고 분석 시작"):
                     st.markdown(analyze_job(model, job))
         else:
             st.warning("현재 주연님의 전문 분야(시스템/콘텐츠/UX)에 맞는 공고가 없습니다.")
+
