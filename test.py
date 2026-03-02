@@ -30,15 +30,17 @@ def setup_ai():
 
 def get_driver():
     options = Options()
-    options.add_argument("--headless=new") 
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    # 아래 경로 설정이 핵심입니다 (시스템 설치 경로)
+    options.binary_location = "/usr/bin/chromium" 
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    
+
     from selenium.webdriver.chrome.service import Service
-    from webdriver_manager.chrome import ChromeDriverManager
-    service = Service(ChromeDriverManager().install())
+    # 별도 설치 없이 시스템에 깔린 chromedriver를 바로 사용합니다.
+    service = Service("/usr/bin/chromedriver")
     return webdriver.Chrome(service=service, options=options)
 
 # --- 3. 회사별 수집 엔진 ---
@@ -145,4 +147,5 @@ if st.button("🚀 유효 공고 분석 시작"):
                     st.markdown(analyze_job(model, job))
         else:
             st.warning("현재 주연님의 전문 분야(시스템/콘텐츠/UX)에 맞는 공고가 없습니다.")
+
 
