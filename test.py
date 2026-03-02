@@ -30,18 +30,30 @@ def setup_ai():
 
 def get_driver():
     options = Options()
+    # 최신 헤드리스 모드 및 안정성 강화 옵션
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    # [핵심] 스트림릿 서버에 설치된 브라우저 경로 강제 지정
+    
+    # [추가] 네트워크 및 메모리 안정화 필살기
+    options.add_argument("--disable-extensions")
+    options.add_argument("--dns-prefetch-disable")  # DNS 에러(ERR_NAME_NOT_RESOLVED) 방지
+    options.add_argument("--remote-debugging-port=9222") # 포트 충돌 방지
+    
+    # 스트림릿 서버 설치 경로 강제 지정 (이전 로그의 버전 충돌 해결용)
     options.binary_location = "/usr/bin/chromium"
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     from selenium.webdriver.chrome.service import Service
-    # [핵심] packages.txt로 설치된 드라이버 경로 강제 지정 (버전 충돌 해결)
+    # packages.txt로 설치된 chromedriver 경로 강제 지정
     service = Service("/usr/bin/chromedriver")
-    return webdriver.Chrome(service=service, options=options)
+    
+    try:
+        return webdriver.Chrome(service=service, options=options)
+    except Exception as e:
+        st.error(f"브라우저 초기화 실패: {e}")
+        return None
 
 # --- 3. 회사별 수집 엔진 (필터링 및 방어 로직 적용) ---
 
@@ -142,3 +154,4 @@ if st.button("🚀 분석 시작"):
                     st.markdown(analyze_job(model, job))
         else:
             st.warning("현재 필터 조건에 맞는 공고가 페이지에 없습니다.")
+
