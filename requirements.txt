@@ -1,3 +1,4 @@
 streamlit
-selenium
 google-generativeai
+selenium
+webdriver-manager
